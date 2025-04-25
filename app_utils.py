@@ -1,4 +1,4 @@
-# This is a small collectoin of app utilities to speed up the development and improve the clarity of my web app code across pages.
+# This is a small collectoin of app utilities to speed up the development, detect dirty data, and improve the clarity of my web app code across pages.
 
 # Load libraries
 import pandas as pd
@@ -9,7 +9,39 @@ import streamlit as st
 
 
 
-# 1) Defining constants - these will be re-used multiple times and are centralised here (Don't repeat yourself / DRY principle)
+# 1) Dirty Data Checks
+# Values outside these ranges will trigger an error in the app.
+BOUNDS = {
+    "temperature_2m":      (-50,  50),
+    "relative_humidity_2m": (  0, 100),
+    "rain":                (  0,  95),
+    "snowfall":            (  0, 130),
+    "precipitation":       (  0, None),    # only non-negative
+    "windspeed_10m":       (  0, 270),
+    "shortwave_radiation": (  0,1100),
+}
+
+def validate(df: pd.DataFrame) -> pd.DataFrame:
+    """Ensure no values violate our physical bounds. Halt app if any do."""
+    errors = []
+    for col, (lo, hi) in BOUNDS.items():
+        if lo is not None and (df[col] < lo).any():
+            errors.append(f"{col}: values below {lo}")
+        if hi is not None and (df[col] > hi).any():
+            errors.append(f"{col}: values above {hi}")
+    if errors:
+        st.error(
+            "⚠️ Data-quality violation detected:\n\n" +
+            "\n".join(errors)
+        )
+        st.stop()
+    return df
+
+
+
+
+
+# 2) Defining constants - these will be re-used multiple times and are centralised here (Don't repeat yourself / DRY principle)
 
 # Map friendlier variable names to var's actual names in the data frame (basically UI). Use in weather overview. 
 VARS_MAP = {
@@ -44,7 +76,7 @@ RENEW_MAP = {
 
 
 
-# 2) Create helper functions to make code in later sections more concise
+# 3) Create helper functions to make code in *later* sections more concise
 
 # Enable users to select the specific time period they want to get data for, given their previously selected time range (if haven't selected full year). 
 def filter_by_period(df, duration, month=None, season=None):
@@ -72,9 +104,10 @@ def make_label_map(selected_vars, smooth):
 
 # Load the Data (essentially, you apply the fn. which reads the parquet file, transforms it into a pd data frame, and then caches the result so don't need to re-read the parquet file every time I run the script)
 @st.cache_data
-def load_data():
+def load_data() -> pd.DataFrame:
     df = pd.read_parquet("sion_weather_enriched.parquet")
     df.index = pd.to_datetime(df.index) # convert time stamp index into datetime object to enable future time-based slicing in figures
-    return df
+    return validate(df)
 weather_df = load_data()
+
 
